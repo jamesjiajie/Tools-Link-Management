@@ -361,7 +361,7 @@ p {
 
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -381,10 +381,22 @@ p {
 }
 
 .path,
-.command {
+.command,
+.memory-hint {
   display: grid;
   gap: 7px;
   min-width: 0;
+}
+
+.memory-hint {
+  margin: -2px 0 0;
+  border-left: 3px solid var(--green);
+  padding: 9px 11px;
+  border-radius: 6px;
+  background: #f2f7f2;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .path code,

@@ -245,9 +245,14 @@ def refresh_status(tools: list[dict[str, Any]], server_port: int) -> list[dict[s
             tool["pid"] = process["pid"]
             tool["processName"] = process["processName"]
             tool["lastSeen"] = now_ms()
-        elif tool.get("status") == "running":
-            tool["status"] = "stopped"
+        else:
             tool["pid"] = None
+            if tool.get("startCommand"):
+                tool["status"] = "configured"
+            elif tool.get("source") == "detected" or tool.get("url") or port:
+                tool["status"] = "stopped"
+            else:
+                tool["status"] = "unknown"
     return tools
 
 

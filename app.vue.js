@@ -25,6 +25,9 @@ createApp({
     launchableCount() {
       return this.tools.filter((tool) => tool.startCommand).length;
     },
+    rememberedCount() {
+      return this.tools.filter((tool) => tool.source === "detected").length;
+    },
     visibleTools() {
       const query = this.query.trim().toLowerCase();
       const filtered = this.tools.filter((tool) => {
@@ -200,6 +203,22 @@ createApp({
         stopped: "已停止",
         configured: "已配置",
       }[status] || "未知";
+    },
+    lastSeenText(value) {
+      if (!value) return "还未检测";
+      const date = new Date(Number(value));
+      if (Number.isNaN(date.getTime())) return "还未检测";
+      return date.toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    },
+    memoryHint(tool) {
+      if (tool.startCommand) return "可从工作空间启动";
+      if (tool.source === "detected") return "已记住链接，补充项目路径和启动命令后可一键启动";
+      return "补充启动命令后可一键启动";
     },
     sourceText(source) {
       return source === "detected" ? "自动检测" : "手动";
