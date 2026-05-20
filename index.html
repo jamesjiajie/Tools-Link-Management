@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal Hub</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">PH</span>
+          <div>
+            <h1>Portal Hub</h1>
+            <p>Vue + Python 本地工作空间</p>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="视图">
+          <button :class="{ active: view === 'workspace' }" @click="view = 'workspace'">工作空间</button>
+          <button :class="{ active: view === 'running' }" @click="view = 'running'">运行中</button>
+          <button :class="{ active: view === 'configured' }" @click="view = 'configured'">可启动</button>
+          <button :class="{ active: view === 'detected' }" @click="view = 'detected'">自动检测</button>
+        </nav>
+
+        <div class="sidebar-panel">
+          <span>检测范围</span>
+          <strong>localhost HTTP 服务</strong>
+          <p>点击检测后，会扫描当前监听端口，识别可访问的本地链接并存入工作空间。</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Control Center</p>
+            <h2>Portal 启动管理</h2>
+          </div>
+          <div class="top-actions">
+            <button class="ghost-button" @click="refreshTools">刷新状态</button>
+            <button class="primary-button" :disabled="busy" @click="discoverTools">
+              {{ busy ? '检测中...' : '检测本地服务' }}
+            </button>
+            <button class="dark-button" @click="openEditor()">新增工具</button>
+          </div>
+        </header>
+
+        <section class="metrics">
+          <div class="metric">
+            <span>工作空间</span>
+            <strong>{{ tools.length }}</strong>
+          </div>
+          <div class="metric">
+            <span>运行中</span>
+            <strong>{{ runningCount }}</strong>
+          </div>
+          <div class="metric">
+            <span>可启动</span>
+            <strong>{{ launchableCount }}</strong>
+          </div>
+          <div class="metric">
+            <span>本次检测新增</span>
+            <strong>{{ lastCreated }}</strong>
+          </div>
+        </section>
+
+        <section class="toolbar">
+          <label class="search">
+            <span>⌕</span>
+            <input v-model="query" type="search" placeholder="搜索名称、端口、链接、路径、标签" />
+          </label>
+          <select v-model="sortMode">
+            <option value="status">按状态</option>
+            <option value="name">按名称</option>
+            <option value="port">按端口</option>
+            <option value="updated">按更新时间</option>
+          </select>
+        </section>
+
+        <section class="cards" v-if="visibleTools.length">
+          <article class="portal-card" v-for="tool in visibleTools" :key="tool.id">
+            <div class="card-head">
+              <div>
+                <h3>{{ tool.name }}</h3>
+                <a v-if="tool.url" :href="tool.url" target="_blank" rel="noreferrer">{{ tool.url }}</a>
+                <p v-else>未配置链接</p>
+              </div>
+              <span :class="['status', tool.status]">{{ statusText(tool.status) }}</span>
+            </div>
+
+            <div class="meta-grid">
+              <div>
+                <span>端口</span>
+                <strong>{{ tool.port || '-' }}</strong>
+              </div>
+              <div>
+                <span>PID</span>
+                <strong>{{ tool.pid || '-' }}</strong>
+              </div>
+              <div>
+                <span>来源</span>
+                <strong>{{ sourceText(tool.source) }}</strong>
+              </div>
+              <div>
+                <span>进程</span>
+                <strong>{{ tool.processName || '-' }}</strong>
+              </div>
+            </div>
+
+            <div class="path" v-if="tool.projectPath">
+              <span>项目路径</span>
+              <code>{{ tool.projectPath }}</code>
+            </div>
+
+            <div class="command">
+              <span>启动命令</span>
+              <code>{{ tool.startCommand || '未配置' }}</code>
+            </div>
+
+            <div class="tags" v-if="tool.tags && tool.tags.length">
+              <span v-for="tag in tool.tags" :key="tag">{{ tag }}</span>
+            </div>
+
+            <div class="actions">
+              <button @click="openLink(tool)" :disabled="!tool.url">打开</button>
+              <button @click="startTool(tool)" :disabled="!tool.startCommand || isRunning(tool)">启动</button>
+              <button @click="restartTool(tool)" :disabled="!tool.startCommand">重启</button>
+              <button class="danger" @click="stopTool(tool)" :disabled="!isRunning(tool)">停止</button>
+              <button @click="openEditor(tool)">编辑</button>
+              <button @click="showLog(tool)">日志</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="empty" v-else>
+          <h3>还没有可展示的工具</h3>
+          <p>先点击“检测本地服务”，或者手动新增一个工具链接和启动命令。</p>
+        </section>
+      </main>
+
+      <dialog ref="editorDialog" class="modal">
+        <form @submit.prevent="saveTool">
+          <div class="modal-head">
+            <div>
+              <p class="eyebrow">Workspace Item</p>
+              <h3>{{ editing.id ? '编辑工具' : '新增工具' }}</h3>
+            </div>
+            <button type="button" class="icon-button" @click="closeEditor">×</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              名称
+              <input v-model.trim="editing.name" required />
+            </label>
+            <label>
+              端口
+              <input v-model.trim="editing.port" inputmode="numeric" placeholder="3000" />
+            </label>
+            <label class="span-2">
+              访问链接
+              <input v-model.trim="editing.url" type="url" placeholder="http://localhost:3000" />
+            </label>
+            <label class="span-2">
+              项目路径
+              <input v-model.trim="editing.projectPath" placeholder="/Users/james/Documents/my-portal" />
+            </label>
+            <label class="span-2">
+              启动命令
+              <input v-model.trim="editing.startCommand" placeholder="npm run dev" />
+            </label>
+            <label>
+              标签
+              <input v-model.trim="tagText" placeholder="admin, vite" />
+            </label>
+            <label>
+              来源
+              <select v-model="editing.source">
+                <option value="manual">手动添加</option>
+                <option value="detected">自动检测</option>
+              </select>
+            </label>
+            <label class="span-2">
+              备注
+              <textarea v-model.trim="editing.notes" rows="3"></textarea>
+            </label>
+          </div>
+
+          <div class="modal-actions">
+            <button v-if="editing.id" type="button" class="danger-button" @click="deleteTool(editing)">删除</button>
+            <div>
+              <button type="button" class="ghost-button" @click="closeEditor">取消</button>
+              <button type="submit" class="primary-button">保存</button>
+            </div>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog ref="logDialog" class="modal log-modal">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Process Log</p>
+            <h3>{{ logTitle }}</h3>
+          </div>
+          <button type="button" class="icon-button" @click="$refs.logDialog.close()">×</button>
+        </div>
+        <pre>{{ logText || '暂无日志' }}</pre>
+      </dialog>
+
+      <div class="toast" :class="{ visible: toast }">{{ toast }}</div>
+    </div>
+
+    <script src="./vendor/vue.global.prod.js"></script>
+    <script src="./app.vue.js"></script>
+  </body>
+</html>
