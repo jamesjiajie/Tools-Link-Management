@@ -130,8 +130,10 @@
 
             <div class="actions">
               <button @click="openLink(tool)" :disabled="!tool.url">打开</button>
-              <button @click="startTool(tool)" :disabled="!tool.startCommand || isRunning(tool)">启动</button>
-              <button @click="restartTool(tool)" :disabled="!tool.startCommand">重启</button>
+              <button @click="startTool(tool)" :disabled="tool.startCommand && isRunning(tool)">
+                {{ startButtonText(tool) }}
+              </button>
+              <button @click="restartTool(tool)" :disabled="!tool.startCommand || !isRunning(tool)">重启</button>
               <button class="danger" @click="stopTool(tool)" :disabled="!isRunning(tool)">停止</button>
               <button @click="openEditor(tool)">编辑</button>
               <button @click="showLog(tool)">日志</button>

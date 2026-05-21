@@ -156,6 +156,11 @@ createApp({
       }
     },
     async startTool(tool) {
+      if (!tool.startCommand) {
+        this.openEditor(tool);
+        this.notify("先补充项目路径和启动命令");
+        return;
+      }
       await this.mutateTool(tool, "start", "启动指令已发送");
     },
     async stopTool(tool) {
@@ -219,6 +224,10 @@ createApp({
       if (tool.startCommand) return "可从工作空间启动";
       if (tool.source === "detected") return "已记住链接，补充项目路径和启动命令后可一键启动";
       return "补充启动命令后可一键启动";
+    },
+    startButtonText(tool) {
+      if (!tool.startCommand) return "配置启动";
+      return this.isRunning(tool) ? "已启动" : "启动";
     },
     sourceText(source) {
       return source === "detected" ? "自动检测" : "手动";
