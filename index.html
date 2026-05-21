@@ -39,6 +39,9 @@
           </div>
           <div class="top-actions">
             <button class="ghost-button" @click="refreshTools">刷新状态</button>
+            <button class="danger-button" :disabled="stoppingOthers || !stoppableOtherCount" @click="stopOtherLinks">
+              {{ stoppingOthers ? '停止中...' : '停止其他链接' }}
+            </button>
             <button class="primary-button" :disabled="busy" @click="discoverTools">
               {{ busy ? '检测中...' : '检测本地服务' }}
             </button>
@@ -136,6 +139,7 @@
               <button @click="restartTool(tool)" :disabled="!tool.startCommand || !isRunning(tool)">重启</button>
               <button class="danger" @click="stopTool(tool)" :disabled="!isRunning(tool)">停止</button>
               <button @click="openEditor(tool)">编辑</button>
+              <button class="danger" @click="deleteTool(tool)">删除</button>
               <button @click="showLog(tool)">日志</button>
             </div>
           </article>

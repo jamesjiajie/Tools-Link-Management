@@ -8,6 +8,7 @@ createApp({
       query: "",
       sortMode: "status",
       busy: false,
+      stoppingOthers: false,
       toast: "",
       toastTimer: null,
       lastCreated: 0,
@@ -27,6 +28,9 @@ createApp({
     },
     rememberedCount() {
       return this.tools.filter((tool) => tool.source === "detected").length;
+    },
+    stoppableOtherCount() {
+      return this.tools.filter((tool) => this.isRunning(tool) && !this.isLinkManagement(tool)).length;
     },
     visibleTools() {
       const query = this.query.trim().toLowerCase();
@@ -108,9 +112,31 @@ createApp({
         this.busy = false;
       }
     },
+    async stopOtherLinks() {
+      this.stoppingOthers = true;
+      try {
+        const payload = await this.api("/api/tools/stop-others", { method: "POST" });
+        this.tools = payload.tools;
+        const stopped = payload.stopped?.length || 0;
+        const failed = payload.errors?.length || 0;
+        if (failed) {
+          this.notify(`已停止 ${stopped} 个链接，${failed} 个失败`);
+        } else {
+          this.notify(stopped ? `已停止 ${stopped} 个其他链接` : "没有其他运行中的链接");
+        }
+      } catch (error) {
+        this.notify(error.message);
+      } finally {
+        this.stoppingOthers = false;
+      }
+    },
+    cloneTool(tool) {
+      return JSON.parse(JSON.stringify(tool));
+    },
     openEditor(tool = null) {
-      this.editing = tool ? structuredClone(tool) : this.emptyTool();
+      this.editing = tool ? this.cloneTool(tool) : this.emptyTool();
       this.tagText = (this.editing.tags || []).join(", ");
+      if (this.$refs.editorDialog.open) this.$refs.editorDialog.close();
       this.$refs.editorDialog.showModal();
     },
     closeEditor() {
@@ -146,9 +172,11 @@ createApp({
       }
     },
     async deleteTool(tool) {
+      const name = tool.name || tool.url || "这个工具";
+      if (!window.confirm(`从工作空间删除「${name}」？`)) return;
       try {
         await this.api(`/api/tools/${tool.id}`, { method: "DELETE" });
-        this.closeEditor();
+        if (this.$refs.editorDialog.open) this.closeEditor();
         await this.refreshTools();
         this.notify("已删除");
       } catch (error) {
@@ -200,6 +228,10 @@ createApp({
     },
     isRunning(tool) {
       return tool.status === "running" || tool.status === "starting";
+    },
+    isLinkManagement(tool) {
+      const text = [tool.name, tool.url, tool.projectPath, tool.startCommand].filter(Boolean).join(" ").toLowerCase();
+      return tool.port === "4173" || text.includes("link-management") || text.includes("portal hub");
     },
     statusText(status) {
       return {

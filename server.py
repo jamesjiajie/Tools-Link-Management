@@ -488,6 +488,61 @@ def stop_tool(tool: dict[str, Any], server_port: int) -> dict[str, Any]:
     return tool
 
 
+def is_link_management_tool(tool: dict[str, Any], server_port: int) -> bool:
+    port = str(tool.get("port") or parse_port_from_url(str(tool.get("url") or "")))
+    if port == str(server_port):
+        return True
+
+    project_path = str(tool.get("projectPath") or "").strip()
+    if project_path:
+        try:
+            if Path(project_path).expanduser().resolve() == ROOT:
+                return True
+        except OSError:
+            pass
+
+    text = " ".join(
+        str(value or "")
+        for value in (
+            tool.get("name"),
+            tool.get("url"),
+            tool.get("projectPath"),
+            tool.get("startCommand"),
+        )
+    ).lower()
+    return "link-management" in text or "portal hub" in text
+
+
+def stop_other_tools(server_port: int) -> dict[str, Any]:
+    workspace = load_workspace()
+    tools = dedupe_tools(refresh_status(workspace["tools"], server_port))
+    stopped: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    for index, tool in enumerate(tools):
+        if is_link_management_tool(tool, server_port):
+            skipped.append({"id": str(tool.get("id")), "name": str(tool.get("name") or "Link Management")})
+            continue
+        if tool.get("status") not in {"running", "starting"}:
+            continue
+
+        try:
+            tools[index] = stop_tool(tool, server_port)
+            stopped.append({"id": str(tool.get("id")), "name": str(tool.get("name") or tool.get("url") or "Untitled Portal")})
+        except ValueError as error:
+            errors.append({"id": str(tool.get("id")), "name": str(tool.get("name") or "Untitled Portal"), "error": str(error)})
+
+    workspace["tools"] = dedupe_tools(refresh_status(tools, server_port))
+    save_workspace(workspace)
+    return {
+        "tools": workspace["tools"],
+        "stopped": stopped,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
 class PortalHandler(SimpleHTTPRequestHandler):
     server_version = "PortalHub/1.0"
 
@@ -541,6 +596,9 @@ class PortalHandler(SimpleHTTPRequestHandler):
                 workspace["tools"].append(tool)
                 save_workspace(workspace)
                 self.send_json({"tool": tool}, 201)
+                return
+            if route == "/api/tools/stop-others":
+                self.send_json(stop_other_tools(self.server.server_port))
                 return
 
             match = re.fullmatch(r"/api/tools/([^/]+)/(start|stop|restart)", route)
