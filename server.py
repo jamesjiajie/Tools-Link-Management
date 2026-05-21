@@ -142,6 +142,110 @@ def list_listening_processes() -> list[dict[str, Any]]:
     return rows
 
 
+def process_command(pid: int) -> str:
+    try:
+        completed = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    return completed.stdout.strip()
+
+
+def process_cwd(pid: int) -> str:
+    try:
+        completed = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+    for line in completed.stdout.splitlines():
+        if line.startswith("n"):
+            return line[1:]
+    return ""
+
+
+def find_project_root(cwd: str) -> Path | None:
+    if not cwd:
+        return None
+
+    path = Path(cwd).expanduser().resolve()
+    candidates = [path, *path.parents]
+    for candidate in candidates[:6]:
+        if (candidate / "package.json").exists() or (candidate / "pyproject.toml").exists():
+            return candidate
+    return path if path.exists() else None
+
+
+def package_manager_command(project_root: Path) -> str:
+    package_file = project_root / "package.json"
+    if not package_file.exists():
+        return ""
+
+    try:
+        package = json.loads(package_file.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+    scripts = package.get("scripts") if isinstance(package, dict) else {}
+    if not isinstance(scripts, dict):
+        return ""
+
+    script_name = ""
+    for candidate in ("dev", "start", "serve"):
+        if candidate in scripts:
+            script_name = candidate
+            break
+    if not script_name:
+        return ""
+
+    if (project_root / "pnpm-lock.yaml").exists():
+        return f"pnpm {script_name}" if script_name == "dev" else f"pnpm run {script_name}"
+    if (project_root / "yarn.lock").exists():
+        return f"yarn {script_name}"
+    if (project_root / "bun.lockb").exists() or (project_root / "bun.lock").exists():
+        return f"bun run {script_name}"
+    return "npm start" if script_name == "start" else f"npm run {script_name}"
+
+
+def infer_launch_config(pid: int) -> dict[str, str]:
+    command = process_command(pid)
+    cwd = process_cwd(pid)
+    project_root = find_project_root(cwd)
+    project_path = str(project_root) if project_root else cwd
+    start_command = package_manager_command(project_root) if project_root else ""
+    if not start_command:
+        start_command = command
+    return {
+        "projectPath": project_path,
+        "startCommand": start_command,
+    }
+
+
+def fill_missing_launch_config(tool: dict[str, Any], pid: int) -> None:
+    if tool.get("projectPath") and tool.get("startCommand"):
+        return
+
+    launch_config = infer_launch_config(pid)
+    if not tool.get("projectPath") and launch_config.get("projectPath"):
+        tool["projectPath"] = launch_config["projectPath"]
+    if not tool.get("startCommand") and launch_config.get("startCommand"):
+        tool["startCommand"] = launch_config["startCommand"]
+
+
 def probe_http(port: str) -> dict[str, Any] | None:
     request = (
         f"GET / HTTP/1.1\r\nHost: localhost:{port}\r\n"
@@ -195,14 +299,15 @@ def discover_tools(server_port: int) -> list[dict[str, Any]]:
             continue
         seen_ports.add(process["port"])
         name = f"{probe['title']} :{process['port']}" if probe["title"] else f"{process['processName']}:{process['port']}"
+        launch_config = infer_launch_config(process["pid"])
         discovered.append(
             {
                 "id": str(uuid.uuid4()),
                 "name": name,
                 "url": probe["url"],
                 "port": process["port"],
-                "projectPath": "",
-                "startCommand": "",
+                "projectPath": launch_config["projectPath"],
+                "startCommand": launch_config["startCommand"],
                 "tags": ["detected"],
                 "notes": f"HTTP {probe['httpStatus']}".strip(),
                 "status": "running",
@@ -245,6 +350,7 @@ def refresh_status(tools: list[dict[str, Any]], server_port: int) -> list[dict[s
             tool["pid"] = process["pid"]
             tool["processName"] = process["processName"]
             tool["lastSeen"] = now_ms()
+            fill_missing_launch_config(tool, process["pid"])
         else:
             tool["pid"] = None
             if tool.get("startCommand"):
@@ -274,6 +380,8 @@ def merge_discovered(server_port: int) -> dict[str, Any]:
                     "status": "running",
                     "pid": found["pid"],
                     "managed": target.get("managed") or False,
+                    "projectPath": target.get("projectPath") or found["projectPath"],
+                    "startCommand": target.get("startCommand") or found["startCommand"],
                     "processName": found["processName"],
                     "source": target.get("source") or "detected",
                     "lastSeen": found["lastSeen"],
