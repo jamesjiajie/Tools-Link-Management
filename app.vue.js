@@ -4,7 +4,7 @@ createApp({
   data() {
     return {
       tools: [],
-      view: "workspace",
+      view: "running",
       query: "",
       sortMode: "status",
       busy: false,
@@ -189,7 +189,15 @@ createApp({
         this.notify("先补充项目路径和启动命令");
         return;
       }
-      await this.mutateTool(tool, "start", "启动指令已发送");
+      const permission = this.requestNotificationPermission();
+      await this.mutateTool(tool, "start", "启动成功", {
+        notification: {
+          title: "启动成功",
+          body: `${tool.name || tool.url || "工具"} 已启动`,
+          tag: `portal-start-${tool.id}`,
+          permission,
+        },
+      });
     },
     async stopTool(tool) {
       await this.mutateTool(tool, "stop", "停止指令已发送");
@@ -197,11 +205,12 @@ createApp({
     async restartTool(tool) {
       await this.mutateTool(tool, "restart", "重启指令已发送");
     },
-    async mutateTool(tool, action, message) {
+    async mutateTool(tool, action, message, options = {}) {
       try {
         await this.api(`/api/tools/${tool.id}/${action}`, { method: "POST" });
         await this.refreshTools();
         this.notify(message);
+        await this.notifySystem(options.notification);
       } catch (error) {
         this.notify(error.message);
       }
@@ -225,6 +234,28 @@ createApp({
       this.toastTimer = window.setTimeout(() => {
         this.toast = "";
       }, 2600);
+    },
+    async requestNotificationPermission() {
+      if (!("Notification" in window)) return "unsupported";
+      if (Notification.permission !== "default") return Notification.permission;
+      try {
+        return await Notification.requestPermission();
+      } catch {
+        return Notification.permission;
+      }
+    },
+    async notifySystem(notification) {
+      if (!notification || !("Notification" in window)) return;
+      const permission = notification.permission ? await notification.permission : Notification.permission;
+      if (permission !== "granted") return;
+      try {
+        new Notification(notification.title, {
+          body: notification.body,
+          tag: notification.tag,
+        });
+      } catch {
+        // Browser notifications are a bonus; the in-page toast still confirms success.
+      }
     },
     isRunning(tool) {
       return tool.status === "running" || tool.status === "starting";

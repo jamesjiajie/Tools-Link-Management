@@ -18,8 +18,8 @@
         </div>
 
         <nav class="nav" aria-label="视图">
-          <button :class="{ active: view === 'workspace' }" @click="view = 'workspace'">工作空间</button>
           <button :class="{ active: view === 'running' }" @click="view = 'running'">运行中</button>
+          <button :class="{ active: view === 'workspace' }" @click="view = 'workspace'">工作空间</button>
           <button :class="{ active: view === 'configured' }" @click="view = 'configured'">可启动</button>
           <button :class="{ active: view === 'detected' }" @click="view = 'detected'">自动检测</button>
         </nav>
