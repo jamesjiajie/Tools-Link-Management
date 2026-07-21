@@ -247,9 +247,7 @@ p {
 }
 
 .metric span,
-.meta-grid span,
-.path span,
-.command span {
+.meta-grid span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 760;
@@ -309,8 +307,8 @@ p {
 
 .portal-card {
   display: grid;
-  gap: 15px;
-  min-height: 330px;
+  gap: 16px;
+  min-height: 226px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -361,7 +359,7 @@ p {
 
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -378,41 +376,6 @@ p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.path,
-.command,
-.memory-hint {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-
-.memory-hint {
-  margin: -2px 0 0;
-  border-left: 3px solid var(--green);
-  padding: 9px 11px;
-  border-radius: 6px;
-  background: #f2f7f2;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.path code,
-.command code {
-  display: block;
-  overflow-wrap: anywhere;
-  border-radius: 8px;
-  padding: 11px;
-  background: #17201b;
-  color: #e8f2ec;
-  font-size: 13px;
-}
-
-.path code {
-  background: #eef3ee;
-  color: var(--ink);
 }
 
 .tags,

@@ -284,9 +284,9 @@ createApp({
       });
     },
     memoryHint(tool) {
-      if (tool.startCommand) return "可从工作空间启动";
-      if (tool.source === "detected") return "已记住链接，补充项目路径和启动命令后可一键启动";
-      return "补充启动命令后可一键启动";
+      if (tool.startCommand) return "已配置启动";
+      if (tool.source === "detected") return "已收录本地链接";
+      return "尚未配置启动";
     },
     startButtonText(tool) {
       if (!tool.startCommand) return "配置启动";

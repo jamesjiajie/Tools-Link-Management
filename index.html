@@ -71,7 +71,7 @@
         <section class="toolbar">
           <label class="search">
             <span>⌕</span>
-            <input v-model="query" type="search" placeholder="搜索名称、端口、链接、路径、标签" />
+            <input v-model="query" type="search" placeholder="搜索名称、端口、链接、标签" />
           </label>
           <select v-model="sortMode">
             <option value="status">按状态</option>
@@ -102,10 +102,6 @@
                 <strong>{{ tool.pid || '-' }}</strong>
               </div>
               <div>
-                <span>来源</span>
-                <strong>{{ sourceText(tool.source) }}</strong>
-              </div>
-              <div>
                 <span>进程</span>
                 <strong>{{ tool.processName || '-' }}</strong>
               </div>
@@ -114,18 +110,6 @@
                 <strong>{{ lastSeenText(tool.lastSeen) }}</strong>
               </div>
             </div>
-
-            <div class="path" v-if="tool.projectPath">
-              <span>项目路径</span>
-              <code>{{ tool.projectPath }}</code>
-            </div>
-
-            <div class="command">
-              <span>启动命令</span>
-              <code>{{ tool.startCommand || '未配置' }}</code>
-            </div>
-
-            <p class="memory-hint">{{ memoryHint(tool) }}</p>
 
             <div class="tags" v-if="tool.tags && tool.tags.length">
               <span v-for="tag in tool.tags" :key="tag">{{ tag }}</span>
