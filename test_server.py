@@ -105,6 +105,37 @@ class DedupeToolsTest(unittest.TestCase):
 
         self.assertEqual(len(server.dedupe_tools([first, second])), 2)
 
+    def test_packaged_desktop_service_ignores_dynamic_paths_and_config(self):
+        first = self.make_tool(
+            name="CodeBuddy Code Remote Control :56906",
+            port="56906",
+            url="http://localhost:56906",
+            projectPath="/Users/example/.workbuddy",
+            processName="Electron",
+            startCommand=(
+                "/Applications/WorkBuddy.app/Contents/MacOS/Electron "
+                "codebuddy --serve --port 56906 --mcp-config first"
+            ),
+        )
+        second = self.make_tool(
+            name="CodeBuddy Code Remote Control :62746",
+            port="62746",
+            url="http://localhost:62746",
+            projectPath="/private/tmp/workbuddy-host-cli/session-2",
+            processName="Electron",
+            startCommand=(
+                "/Applications/WorkBuddy.app/Contents/MacOS/Electron "
+                "codebuddy --serve --port 62746 --mcp-config second"
+            ),
+            status="running",
+            lastSeen=300,
+        )
+
+        result = server.dedupe_tools([first, second])
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["port"], "62746")
+
     @patch("server.save_workspace")
     @patch("server.refresh_status", side_effect=lambda tools, _port: tools)
     @patch("server.discover_tools")

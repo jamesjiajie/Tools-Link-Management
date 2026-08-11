@@ -349,6 +349,13 @@ def detected_process_identity(tool: dict[str, Any]) -> str:
     return f"detected:{name}\nprocess:{process_name}\nexecutable:{executable}"
 
 
+def is_packaged_app_process(tool: dict[str, Any]) -> bool:
+    """Return whether a detected service is launched by an installed macOS app."""
+    command = str(tool.get("startCommand") or "").strip()
+    executable = command.split(maxsplit=1)[0] if command else ""
+    return executable.startswith(("/Applications/", "/System/Applications/"))
+
+
 def tool_identity(tool: dict[str, Any]) -> str:
     """Return a stable identity for a task, independent from its current port."""
     project_path = str(tool.get("projectPath") or "").strip()
@@ -358,8 +365,16 @@ def tool_identity(tool: dict[str, Any]) -> str:
         except OSError:
             project_path = os.path.normcase(os.path.normpath(project_path))
 
-    # A process rooted at / does not identify a project and would collapse
-    # unrelated system services into one entry.
+    # Packaged desktop services often use changing ports, temporary working
+    # directories, and dynamic configuration. Identify them by the stable app
+    # process signature before considering their inferred project path.
+    if tool.get("source") == "detected" and (
+        project_path == os.path.sep or is_packaged_app_process(tool)
+    ):
+        detected_identity = detected_process_identity(tool)
+        if detected_identity:
+            return detected_identity
+
     if project_path and project_path != os.path.sep:
         command = normalize_start_command(str(tool.get("startCommand") or ""))
         return f"project:{project_path}\ncommand:{command}"
