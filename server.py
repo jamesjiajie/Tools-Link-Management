@@ -323,16 +323,75 @@ def discover_tools(server_port: int) -> list[dict[str, Any]]:
     return discovered
 
 
+def normalize_start_command(command: str) -> str:
+    """Remove port-only launch differences so one task keeps one identity."""
+    normalized = re.sub(
+        r"(?i)(--(?:https-server-|https_server_)?port)(?:=|\s+)\d+",
+        r"\1 <port>",
+        command.strip(),
+    )
+    return re.sub(r"\s+", " ", normalized)
+
+
+def tool_identity(tool: dict[str, Any]) -> str:
+    """Return a stable identity for a task, independent from its current port."""
+    project_path = str(tool.get("projectPath") or "").strip()
+    if project_path:
+        try:
+            project_path = os.path.normcase(str(Path(project_path).expanduser().resolve()))
+        except OSError:
+            project_path = os.path.normcase(os.path.normpath(project_path))
+
+    # A process rooted at / does not identify a project and would collapse
+    # unrelated system services into one entry.
+    if project_path and project_path != os.path.sep:
+        command = normalize_start_command(str(tool.get("startCommand") or ""))
+        return f"project:{project_path}\ncommand:{command}"
+
+    port = str(tool.get("port") or parse_port_from_url(str(tool.get("url") or "")))
+    return f"port:{port}" if port else f"url:{tool.get('url') or tool.get('id')}"
+
+
+def merge_duplicate_tools(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """Merge duplicate history while keeping the most recently active address."""
+    active_statuses = {"running", "starting"}
+
+    def freshness(tool: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            int(tool.get("status") in active_statuses),
+            int(tool.get("lastSeen") or 0),
+            int(tool.get("updatedAt") or 0),
+        )
+
+    preferred, other = (
+        (candidate, existing)
+        if freshness(candidate) > freshness(existing)
+        else (existing, candidate)
+    )
+    merged = {**other, **preferred}
+    merged["id"] = existing.get("id") or candidate.get("id")
+    merged["managed"] = bool(existing.get("managed") or candidate.get("managed"))
+    created_values = [
+        value
+        for value in (existing.get("createdAt"), candidate.get("createdAt"))
+        if value is not None
+    ]
+    merged["createdAt"] = min(created_values) if created_values else now_ms()
+    merged["tags"] = list(dict.fromkeys([*(existing.get("tags") or []), *(candidate.get("tags") or [])]))
+    return merged
+
+
 def dedupe_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
-    seen = set()
+    index_by_identity: dict[str, int] = {}
     for tool in tools:
-        port = str(tool.get("port") or parse_port_from_url(str(tool.get("url") or "")))
-        key = port or str(tool.get("url") or tool.get("id"))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(tool)
+        identity = tool_identity(tool)
+        index = index_by_identity.get(identity)
+        if index is None:
+            index_by_identity[identity] = len(deduped)
+            deduped.append(tool)
+        else:
+            deduped[index] = merge_duplicate_tools(deduped[index], tool)
     return deduped
 
 
@@ -367,29 +426,40 @@ def merge_discovered(server_port: int) -> dict[str, Any]:
     tools = dedupe_tools(workspace["tools"])
     existing_by_port = {str(tool.get("port") or parse_port_from_url(str(tool.get("url") or ""))): tool for tool in tools}
     existing_by_url = {str(tool.get("url") or ""): tool for tool in tools}
+    existing_by_identity = {tool_identity(tool): tool for tool in tools}
 
     created = 0
     for found in discover_tools(server_port):
-        target = existing_by_port.get(found["port"]) or existing_by_url.get(found["url"])
+        target = (
+            existing_by_identity.get(tool_identity(found))
+            or existing_by_port.get(found["port"])
+            or existing_by_url.get(found["url"])
+        )
         if target:
             target.update(
                 {
-                    "name": target.get("name") or found["name"],
-                    "url": target.get("url") or found["url"],
-                    "port": target.get("port") or found["port"],
+                    "name": found["name"],
+                    "url": found["url"],
+                    "port": found["port"],
                     "status": "running",
                     "pid": found["pid"],
                     "managed": target.get("managed") or False,
-                    "projectPath": target.get("projectPath") or found["projectPath"],
-                    "startCommand": target.get("startCommand") or found["startCommand"],
+                    "projectPath": found["projectPath"] or target.get("projectPath"),
+                    "startCommand": found["startCommand"] or target.get("startCommand"),
                     "processName": found["processName"],
                     "source": target.get("source") or "detected",
                     "lastSeen": found["lastSeen"],
                     "updatedAt": now_ms(),
                 }
             )
+            existing_by_port[found["port"]] = target
+            existing_by_url[found["url"]] = target
+            existing_by_identity[tool_identity(target)] = target
         else:
             tools.append(found)
+            existing_by_port[found["port"]] = found
+            existing_by_url[found["url"]] = found
+            existing_by_identity[tool_identity(found)] = found
             created += 1
 
     workspace["tools"] = dedupe_tools(refresh_status(tools, server_port))

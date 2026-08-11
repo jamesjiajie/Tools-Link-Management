@@ -1,0 +1,98 @@
+import unittest
+from unittest.mock import patch
+
+import server
+
+
+class DedupeToolsTest(unittest.TestCase):
+    def make_tool(self, **overrides):
+        tool = {
+            "id": "old-id",
+            "name": "Portal :8017",
+            "url": "http://localhost:8017",
+            "port": "8017",
+            "projectPath": "/tmp/example-project",
+            "startCommand": "python -m uvicorn app:app --port 8017",
+            "tags": ["detected"],
+            "status": "configured",
+            "managed": True,
+            "lastSeen": 100,
+            "createdAt": 10,
+            "updatedAt": 100,
+        }
+        tool.update(overrides)
+        return tool
+
+    def test_same_project_and_command_dedupes_across_ports(self):
+        current = self.make_tool(
+            id="new-id",
+            name="Portal :8018",
+            url="http://localhost:8018",
+            port="8018",
+            startCommand="python -m uvicorn app:app --port=8018",
+            status="running",
+            managed=False,
+            lastSeen=200,
+            createdAt=20,
+            updatedAt=200,
+        )
+
+        result = server.dedupe_tools([self.make_tool(), current])
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["id"], "old-id")
+        self.assertEqual(result[0]["port"], "8018")
+        self.assertEqual(result[0]["url"], "http://localhost:8018")
+        self.assertEqual(result[0]["status"], "running")
+        self.assertTrue(result[0]["managed"])
+        self.assertEqual(result[0]["createdAt"], 10)
+
+    def test_different_commands_in_one_project_remain_distinct(self):
+        api = self.make_tool(id="api", startCommand="npm run api -- --port 8017")
+        web = self.make_tool(id="web", port="8018", startCommand="npm run web -- --port 8018")
+
+        self.assertEqual(len(server.dedupe_tools([api, web])), 2)
+
+    def test_root_processes_are_not_grouped_as_one_project(self):
+        first = self.make_tool(projectPath="/", port="5001", url="http://localhost:5001")
+        second = self.make_tool(projectPath="/", port="5002", url="http://localhost:5002")
+
+        self.assertEqual(len(server.dedupe_tools([first, second])), 2)
+
+    @patch("server.save_workspace")
+    @patch("server.refresh_status", side_effect=lambda tools, _port: tools)
+    @patch("server.discover_tools")
+    @patch("server.load_workspace")
+    def test_discovery_replaces_historical_port_without_creating_task(
+        self, load_workspace, discover_tools, _refresh_status, save_workspace
+    ):
+        historical = self.make_tool()
+        current = self.make_tool(
+            id="discovered-id",
+            name="Portal :8018",
+            url="http://localhost:8018",
+            port="8018",
+            startCommand="python -m uvicorn app:app --port 8018",
+            status="running",
+            managed=False,
+            lastSeen=300,
+            updatedAt=300,
+            pid=123,
+            processName="Python",
+            source="detected",
+        )
+        load_workspace.return_value = {"tools": [historical]}
+        discover_tools.return_value = [current]
+
+        result = server.merge_discovered(4173)
+
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(len(result["tools"]), 1)
+        self.assertEqual(result["tools"][0]["id"], "old-id")
+        self.assertEqual(result["tools"][0]["port"], "8018")
+        self.assertEqual(result["tools"][0]["url"], "http://localhost:8018")
+        save_workspace.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
