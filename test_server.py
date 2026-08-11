@@ -16,6 +16,7 @@ class DedupeToolsTest(unittest.TestCase):
             "tags": ["detected"],
             "status": "configured",
             "managed": True,
+            "source": "detected",
             "lastSeen": 100,
             "createdAt": 10,
             "updatedAt": 100,
@@ -53,9 +54,54 @@ class DedupeToolsTest(unittest.TestCase):
 
         self.assertEqual(len(server.dedupe_tools([api, web])), 2)
 
-    def test_root_processes_are_not_grouped_as_one_project(self):
-        first = self.make_tool(projectPath="/", port="5001", url="http://localhost:5001")
-        second = self.make_tool(projectPath="/", port="5002", url="http://localhost:5002")
+    def test_detected_root_process_dedupes_across_ports(self):
+        first = self.make_tool(
+            projectPath="/",
+            name="Antigravity :5001",
+            port="5001",
+            url="http://localhost:5001",
+            processName="language_",
+            startCommand="/Applications/Antigravity.app/bin/language_server --port 5001",
+        )
+        second = self.make_tool(
+            projectPath="/",
+            name="Antigravity :5002",
+            port="5002",
+            url="http://localhost:5002",
+            processName="language_",
+            startCommand="/Applications/Antigravity.app/bin/language_server --port 5002",
+            status="running",
+            lastSeen=200,
+        )
+
+        result = server.dedupe_tools([first, second])
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["port"], "5002")
+
+    def test_different_root_services_remain_distinct(self):
+        first = self.make_tool(
+            projectPath="/",
+            name="Antigravity :5001",
+            port="5001",
+            url="http://localhost:5001",
+            processName="language_",
+            startCommand="/Applications/Antigravity.app/bin/language_server --port 5001",
+        )
+        second = self.make_tool(
+            projectPath="/",
+            name="Other Service :5002",
+            port="5002",
+            url="http://localhost:5002",
+            processName="language_",
+            startCommand="/Applications/Other.app/bin/server --port 5002",
+        )
+
+        self.assertEqual(len(server.dedupe_tools([first, second])), 2)
+
+    def test_manual_root_records_remain_port_specific(self):
+        first = self.make_tool(projectPath="/", source="manual", port="5001")
+        second = self.make_tool(projectPath="/", source="manual", port="5002")
 
         self.assertEqual(len(server.dedupe_tools([first, second])), 2)
 

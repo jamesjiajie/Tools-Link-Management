@@ -333,6 +333,22 @@ def normalize_start_command(command: str) -> str:
     return re.sub(r"\s+", " ", normalized)
 
 
+def detected_process_identity(tool: dict[str, Any]) -> str:
+    """Identify a detected root-level service without relying on its port."""
+    port = str(tool.get("port") or parse_port_from_url(str(tool.get("url") or "")))
+    name = str(tool.get("name") or "").strip()
+    if port:
+        name = re.sub(rf"\s*:\s*{re.escape(port)}\s*$", "", name)
+    name = re.sub(r"\s+", " ", name).casefold()
+
+    process_name = str(tool.get("processName") or "").strip().casefold()
+    command = str(tool.get("startCommand") or "").strip()
+    executable = command.split(maxsplit=1)[0].casefold() if command else ""
+    if not name or not (process_name or executable):
+        return ""
+    return f"detected:{name}\nprocess:{process_name}\nexecutable:{executable}"
+
+
 def tool_identity(tool: dict[str, Any]) -> str:
     """Return a stable identity for a task, independent from its current port."""
     project_path = str(tool.get("projectPath") or "").strip()
@@ -347,6 +363,11 @@ def tool_identity(tool: dict[str, Any]) -> str:
     if project_path and project_path != os.path.sep:
         command = normalize_start_command(str(tool.get("startCommand") or ""))
         return f"project:{project_path}\ncommand:{command}"
+
+    if tool.get("source") == "detected":
+        detected_identity = detected_process_identity(tool)
+        if detected_identity:
+            return detected_identity
 
     port = str(tool.get("port") or parse_port_from_url(str(tool.get("url") or "")))
     return f"port:{port}" if port else f"url:{tool.get('url') or tool.get('id')}"
