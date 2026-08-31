@@ -188,6 +188,43 @@ class DedupeToolsTest(unittest.TestCase):
         self.assertEqual(result["tools"][0]["url"], "http://localhost:8018")
         save_workspace.assert_called_once()
 
+    @patch("server.save_workspace")
+    @patch("server.refresh_status", side_effect=lambda tools, _port: tools)
+    @patch("server.discover_tools")
+    @patch("server.load_workspace")
+    def test_discovery_preserves_custom_query_link(
+        self, load_workspace, discover_tools, _refresh_status, save_workspace
+    ):
+        custom_url = "http://127.0.0.1:5173/?status=active&sort=updated_desc"
+        historical = self.make_tool(
+            id="custom-link",
+            url=custom_url,
+            port="5173",
+            source="manual",
+        )
+        current = self.make_tool(
+            id="discovered-id",
+            name="Project :5173",
+            url="http://localhost:5173",
+            port="5173",
+            status="running",
+            pid=7520,
+            processName="node",
+            source="detected",
+            lastSeen=300,
+            updatedAt=300,
+        )
+        load_workspace.return_value = {"tools": [historical]}
+        discover_tools.return_value = [current]
+
+        result = server.merge_discovered(4173)
+
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(result["tools"][0]["id"], "custom-link")
+        self.assertEqual(result["tools"][0]["url"], custom_url)
+        self.assertEqual(result["tools"][0]["status"], "running")
+        save_workspace.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

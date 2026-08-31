@@ -105,6 +105,15 @@ def parse_port_from_url(url: str) -> str:
         return ""
 
 
+def has_custom_url_target(url: str) -> bool:
+    """Whether a saved URL targets more than a service's root address."""
+    try:
+        parsed = urlparse(recognize_link_url(url))
+    except ValueError:
+        return False
+    return parsed.path not in {"", "/"} or bool(parsed.query) or bool(parsed.fragment)
+
+
 def shell_quote(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_./:-]+", value):
         return value
@@ -487,7 +496,7 @@ def merge_discovered(server_port: int) -> dict[str, Any]:
             target.update(
                 {
                     "name": found["name"],
-                    "url": found["url"],
+                    "url": target["url"] if has_custom_url_target(str(target.get("url") or "")) else found["url"],
                     "port": found["port"],
                     "status": "running",
                     "pid": found["pid"],
