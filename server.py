@@ -22,6 +22,7 @@ LOG_DIR = ROOT / "logs"
 WORKSPACE_FILE = DATA_DIR / "workspace.json"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 4173
+MARKDOWN_LINK_PATTERN = re.compile(r"^\s*\[[^\]]*\]\((https?://[^\s)]+)\)\s*$")
 
 
 def now_ms() -> int:
@@ -58,10 +59,21 @@ def save_workspace(data: dict[str, Any]) -> None:
     temp_file.replace(WORKSPACE_FILE)
 
 
+def recognize_link_url(value: str) -> str:
+    """Return a usable URL from a direct or Markdown-formatted link."""
+    url = value.strip()
+    match = MARKDOWN_LINK_PATTERN.fullmatch(url)
+    if match:
+        url = match.group(1)
+    return url.replace(r"\&", "&")
+
+
 def normalize_tool(payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
     base = existing or {}
     port = str(payload.get("port") or base.get("port") or "").strip()
-    url = str(payload.get("url") or base.get("url") or "").strip()
+    url = recognize_link_url(str(payload.get("url") or base.get("url") or ""))
+    if not port and url:
+        port = parse_port_from_url(url)
     if port and not url:
         url = f"http://localhost:{port}"
 
@@ -87,7 +99,7 @@ def normalize_tool(payload: dict[str, Any], existing: dict[str, Any] | None = No
 
 def parse_port_from_url(url: str) -> str:
     try:
-        parsed = urlparse(url)
+        parsed = urlparse(recognize_link_url(url))
         return str(parsed.port or "")
     except ValueError:
         return ""

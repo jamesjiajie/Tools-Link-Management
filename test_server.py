@@ -48,6 +48,24 @@ class DedupeToolsTest(unittest.TestCase):
         self.assertTrue(result[0]["managed"])
         self.assertEqual(result[0]["createdAt"], 10)
 
+    def test_query_link_is_recognized_and_keeps_its_query(self):
+        url = "http://127.0.0.1:5173/?status=active&sort=updated_desc"
+
+        tool = server.normalize_tool({"url": url})
+
+        self.assertEqual(tool["url"], url)
+        self.assertEqual(tool["port"], "5173")
+
+    def test_markdown_link_is_recognized_and_normalized(self):
+        tool = server.normalize_tool(
+            {"url": "[Active tasks](http://127.0.0.1:5173/?status=active\\&sort=updated_desc)"}
+        )
+
+        self.assertEqual(
+            tool["url"], "http://127.0.0.1:5173/?status=active&sort=updated_desc"
+        )
+        self.assertEqual(tool["port"], "5173")
+
     def test_different_commands_in_one_project_remain_distinct(self):
         api = self.make_tool(id="api", startCommand="npm run api -- --port 8017")
         web = self.make_tool(id="web", port="8018", startCommand="npm run web -- --port 8018")

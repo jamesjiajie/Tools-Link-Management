@@ -142,6 +142,11 @@ createApp({
     closeEditor() {
       this.$refs.editorDialog.close();
     },
+    recognizeLinkUrl(value) {
+      const text = String(value || "").trim();
+      const match = text.match(/^\s*\[[^\]]*\]\((https?:\/\/[^\s)]+)\)\s*$/);
+      return (match ? match[1] : text).replace(/\\&/g, "&");
+    },
     async saveTool() {
       const body = {
         ...this.editing,
@@ -150,6 +155,7 @@ createApp({
           .map((tag) => tag.trim())
           .filter(Boolean),
       };
+      body.url = this.recognizeLinkUrl(body.url);
       if (!body.port && body.url) {
         try {
           body.port = new URL(body.url).port;
